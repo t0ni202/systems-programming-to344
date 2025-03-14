@@ -1,19 +1,19 @@
 1. How does the remote client determine when a command's output is fully received from the server, and what techniques can be used to handle partial reads or ensure complete message transmission?
 
-_answer here_
+The remote client determines when command output is fully received by looking for a special end-of-message marker (the EOF character, 0x04 in our implementation). When this character is detected at the end of received data, the client knows the server has finished sending the output. Techniques to handle partial reads and ensure complete message transmission include implementing a receive loop that continues until the EOF marker is found, buffering received data until a complete message is assembled, using state machines to track message assembly, including message length headers or delimiters, implementing timeout mechanisms, and using sliding window protocols for larger messages that might exceed buffer sizes.
 
 2. This week's lecture on TCP explains that it is a reliable stream protocol rather than a message-oriented one. Since TCP does not preserve message boundaries, how should a networked shell protocol define and detect the beginning and end of a command sent over a TCP connection? What challenges arise if this is not handled correctly?
 
-_answer here_
+A networked shell protocol should define message boundaries using approaches such as end-of-message markers (like the EOF character in our implementation), length-prefixed messages, framing protocols, or delimiters that mark message boundaries. If message boundaries aren't handled correctly, challenges include message fragmentation where a single message might be split across multiple TCP packets, message coalescing where multiple messages arrive in a single packet, command confusion, buffer overflows, deadlocks where the receiver waits indefinitely for more data, incomplete command execution, and protocol desynchronization where client and server lose track of the message state.
 
 3. Describe the general differences between stateful and stateless protocols.
 
-_answer here_
+Stateful protocols maintain information about the connection and previous interactions, with servers keeping track of client state between requests, providing more efficient communication as context is preserved, often requiring connection setup and teardown phases (like TCP, SSH, FTP), typically being more complex to implement and scale, more vulnerable to server failures, and better supporting bidirectional communication. In contrast, stateless protocols treat each request as independent with no memory of previous interactions, requiring each request to contain all necessary information, being easier to scale horizontally, more resilient to failures, simpler to implement, potentially requiring more bandwidth for context inclusion (like HTTP, DNS, UDP-based protocols), and being well-suited for request-response patterns
 
 4. Our lecture this week stated that UDP is "unreliable". If that is the case, why would we ever use it?
 
-_answer here_
+Despite being "unreliable," UDP is valuable for its lower latency without connection establishment overhead, higher throughput without acknowledgment or flow control mechanisms, predictable timing where applications control when data is sent, suitability for real-time applications where dropping packets is preferable to waiting (VoIP, video streaming, gaming), efficiency for small infrequent messages, effectiveness in broadcast/multicast scenarios, ability for applications to implement custom reliability mechanisms, acceptability in situations where occasional data loss is tolerable, and simpler protocol state management.
 
 5. What interface/abstraction is provided by the operating system to enable applications to use network communications?
 
-_answer here_
+The operating system provides the socket interface/abstraction for network communications, presenting network communications as file-like objects that can be read from and written to, abstracting away the complexities of network protocols and routing. The Berkeley Sockets API (common across Unix-like systems) offers functions like socket(), bind(), listen(), accept(), connect(), send()/recv(), and close(), supporting various protocols through different socket types, allowing configuration options for behavior control, handling translation between application data and network packets, providing both blocking and non-blocking I/O models, ensuring proper protocol implementation, and managing network resource allocation and multiplexing across applications.

@@ -13,7 +13,6 @@
 
 
 
-
 /*
  * exec_remote_cmd_loop(server_ip, port)
  *      server_ip:  a string in ip address format, indicating the servers IP
@@ -92,7 +91,126 @@
  */
 int exec_remote_cmd_loop(char *address, int port)
 {
-    return WARN_RDSH_NOT_IMPL;
+    int cli_socket;
+    char *request_buff = NULL;
+    char *resp_buff = NULL;
+    int bytes_sent, recv_bytes;
+    int is_eof;
+
+    // Allocate memory for request and response buffers
+    request_buff = malloc(RDSH_COMM_BUFF_SZ);
+    resp_buff = malloc(RDSH_COMM_BUFF_SZ);
+
+    if (request_buff == NULL || resp_buff == NULL) {
+        // Handle memory allocation failure
+        return client_cleanup(0, request_buff, resp_buff, ERR_MEMORY);
+    }
+
+    // Connect to the server
+    cli_socket = start_client(address, port);
+    if (cli_socket < 0) {
+        // Handle connection failure
+        return client_cleanup(0, request_buff, resp_buff, ERR_RDSH_CLIENT);
+    }
+
+    // Command loop
+    while (1) {
+        // Display prompt and get user input
+        printf("%s", SH_PROMPT);
+
+        if (fgets(request_buff, RDSH_COMM_BUFF_SZ, stdin) == NULL) {
+            printf("\n");
+            break;
+        }
+
+        // Remove trailing newline
+        request_buff[strcspn(request_buff, "\n")] = '\0';
+
+        // Handle empty input
+        if (strlen(request_buff) == 0) {
+            continue;
+        }
+
+        // Exit if user types "exit"
+        if (strcmp(request_buff, EXIT_CMD) == 0) {
+            // Still send "exit" to server to close the connection gracefully
+            bytes_sent = send(cli_socket, request_buff, strlen(request_buff) + 1, 0);
+            if (bytes_sent < 0) {
+                perror("Send failed");
+                return client_cleanup(cli_socket, request_buff, resp_buff, ERR_RDSH_COMMUNICATION);
+            }
+
+            // Wait for server response to confirm exit
+            while ((recv_bytes = recv(cli_socket, resp_buff, RDSH_COMM_BUFF_SZ, 0)) > 0) {
+                if (recv_bytes < 0) {
+                    perror("Receive failed");
+                    return client_cleanup(cli_socket, request_buff, resp_buff, ERR_RDSH_COMMUNICATION);
+                }
+
+                // Check if this is the last chunk (EOF character)
+                is_eof = (resp_buff[recv_bytes - 1] == RDSH_EOF_CHAR) ? 1 : 0;
+
+                // If EOF, replace with null for printing and break loop
+                if (is_eof) {
+                    resp_buff[recv_bytes - 1] = '\0';
+                    if (recv_bytes > 1) {  // Only print if there's content
+                        printf("%.*s", (int)(recv_bytes - 1), resp_buff);
+                    }
+                    break;
+                } else {
+                    // Print received chunk
+                    printf("%.*s", (int)recv_bytes, resp_buff);
+                }
+            }
+
+            break;  // Exit the main command loop
+        }
+
+        // Send command to server (including null terminator)
+        bytes_sent = send(cli_socket, request_buff, strlen(request_buff) + 1, 0);
+        if (bytes_sent < 0) {
+            perror("Send failed");
+            return client_cleanup(cli_socket, request_buff, resp_buff, ERR_RDSH_COMMUNICATION);
+        }
+
+        // Receive and display response from server
+        while (1) {
+            recv_bytes = recv(cli_socket, resp_buff, RDSH_COMM_BUFF_SZ, 0);
+
+            if (recv_bytes < 0) {
+                perror("Receive failed");
+                return client_cleanup(cli_socket, request_buff, resp_buff, ERR_RDSH_COMMUNICATION);
+            }
+
+            if (recv_bytes == 0) {
+                // Server closed connection
+                printf("Server connection closed\n");
+                return client_cleanup(cli_socket, request_buff, resp_buff, OK);
+            }
+
+            // Check if this is the last chunk (EOF character)
+            is_eof = (resp_buff[recv_bytes - 1] == RDSH_EOF_CHAR) ? 1 : 0;
+
+            // If EOF, replace with null for printing and break loop
+            if (is_eof) {
+                resp_buff[recv_bytes - 1] = '\0';
+                if (recv_bytes > 1) {  // Only print if there's content
+                    printf("%.*s", (int)(recv_bytes - 1), resp_buff);
+                }
+                break;
+            } else {
+                // Print received chunk
+                printf("%.*s", (int)recv_bytes, resp_buff);
+            }
+        }
+
+        // If server sent "stop-server" command response, exit client
+        if (strstr(request_buff, "stop-server") != NULL) {
+            break;
+        }
+    }
+
+    return client_cleanup(cli_socket, request_buff, resp_buff, OK);
 }
 
 /*
@@ -119,7 +237,35 @@ int exec_remote_cmd_loop(char *address, int port)
  * 
  */
 int start_client(char *server_ip, int port){
-    return WARN_RDSH_NOT_IMPL;
+    int client_socket;
+    struct sockaddr_in server_addr;
+    
+    // Create socket
+    client_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (client_socket < 0) {
+        perror("Socket creation failed");
+        return ERR_RDSH_CLIENT;
+    }
+    
+    // Prepare server address structure
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port);
+    
+    // Convert IP address from string to binary form
+    if (inet_pton(AF_INET, server_ip, &server_addr.sin_addr) <= 0) {
+        perror("Invalid address or address not supported");
+        close(client_socket);
+        return ERR_RDSH_CLIENT;
+    }
+    
+    // Connect to the server
+    if (connect(client_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Connection failed");
+        close(client_socket);
+        return ERR_RDSH_CLIENT;
+    }
+    
+    return client_socket;
 }
 
 /*
